@@ -3,6 +3,8 @@ package com.dostonbek.covidtracker
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
+import androidx.annotation.ColorInt
+import androidx.core.content.ContextCompat
 import com.google.gson.GsonBuilder
 import com.google.gson.internal.GsonBuildConfig
 import kotlinx.android.synthetic.main.activity_main.*
@@ -17,9 +19,11 @@ import java.util.*
 
 private const val BASE_URL = "https://covidtracking.com/api/v1/"
 private const val TAG = "MainActivity"
+private const val ALL_STATES = "All (Nationwide)"
+
 
 class MainActivity : AppCompatActivity() {
-
+    private lateinit var currentlyShownData: List<CovidData>
     private lateinit var adapter: CovidSparkAdapter
     private lateinit var perStateDailyData: Map<String, List<CovidData>>
     private lateinit var nationalDailyData: List<CovidData>
@@ -50,7 +54,7 @@ class MainActivity : AppCompatActivity() {
                 setupEventListeners()
                 nationalDailyData = nationalData.reversed()
                 Log.i(TAG, "Update graph with national data")
-                updateDisplayWithData(nationalDailyData);
+                updateDisplayWithData(nationalDailyData)
             }
         })
 
@@ -69,9 +73,25 @@ class MainActivity : AppCompatActivity() {
                 }
                 perStateDailyData = statesData.reversed().groupBy { it.state }
                 Log.i(TAG, "Update spinner with states data")
-                // TODO: Update graph with national data
+                // Update graph with national data
+                updateSpinnerWithStateData(perStateDailyData.keys)
             }
         })
+    }
+
+    private fun updateSpinnerWithStateData(stateNames: Set<String>) {
+        val stateAbbreviationList = stateNames.toMutableList()
+        stateAbbreviationList.sort()
+        stateAbbreviationList.add(0, ALL_STATES)
+
+        // Add state list as data source for the spinner
+//        spinnerSelect.attachDataSource(stateAbbreviationList)
+        spinnerSelect.setOnSpinnerItemSelectedListener { parent, _, position, _ ->
+            Log.i("Selected State", parent.getItemAtPosition(position).toString())
+            val selectedState = parent.getItemAtPosition(position) as String
+            val selectedData = perStateDailyData[selectedState] ?: nationalDailyData
+            updateDisplayWithData(selectedData)
+        }
     }
 
     private fun setupEventListeners() {
@@ -101,11 +121,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateDisplayMetric(metric: Metric) {
+        // Update the color of the chart
+        val colorRes = when (metric) {
+            Metric.NEGATIVE -> R.color.colorNegative
+            Metric.POSITIVE -> R.color.colorPositive
+            Metric.DEATH -> R.color.colorDeath
+        }
+        @ColorInt val colorInt = ContextCompat.getColor(this, colorRes)
+        sparkView.lineColor = colorInt
+        tvMetricLabel.setTextColor(colorInt)
+
+        // Update the metric on the adapter
         adapter.metric = metric
         adapter.notifyDataSetChanged()
+
+        // Reset number and date shown in the bottom text views
+        updateInfoForDate(currentlyShownData.last())
     }
 
     private fun updateDisplayWithData(dailyData: List<CovidData>) {
+        currentlyShownData = dailyData
         // Create a new SparkAdapter with the data
         adapter = CovidSparkAdapter(dailyData)
         sparkView.adapter = adapter
@@ -113,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         radioButtonPositive.isChecked = true
         radioButtonMax.isChecked = true
         // Display metric for the most recent date
-        updateInfoForDate(dailyData.last())
+        updateDisplayMetric(Metric.POSITIVE)
     }
 
     private fun updateInfoForDate(covidData: CovidData) {
